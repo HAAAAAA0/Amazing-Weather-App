@@ -1,0 +1,126 @@
+import tkinter as tk
+from tkinter import messagebox
+import requests
+from PIL import Image, ImageTk
+from io import BytesIO
+from tkintermapview import TkinterMapView
+
+API_KEY = "0799e9cd716a70e392dd03c9616c6830"
+BASE_URL = "https://api.openweathermap.org/data/2.5/weather"
+
+def get_weather():
+    city = city_entry.get().strip()
+    if not city:
+        messagebox.showwarning("Input error", "Please enter a city name.")
+        return
+    params = {
+        "q": city,
+        "appid": API_KEY,
+        "units": "metric"
+    }
+    try:
+        response = requests.get(BASE_URL, params=params, timeout=5)
+        data = response.json()
+    except requests.exceptions.RequestException as e:
+        messagebox.showerror("Network error", f"Could not reach server:\n{e}")
+        return
+
+    if data.get("cod") != 200:
+        message = data.get("message", "Unknown error")
+        messagebox.showerror("API error", f"Error from API:\n{message}")
+        return
+
+    city_name = data.get("name", city)
+    main = data.get("main", {})
+    weather_list = data.get("weather", [])
+    wind = data.get("wind", {})
+    temp = main.get("temp")
+    humidity = main.get("humidity")
+    pressure = main.get("pressure")
+    description = weather_list[0].get("description") if weather_list else "N/A"
+    icon_code = weather_list[0].get("icon") if weather_list else None
+    wind_speed = wind.get("speed")
+    # Get lat/lon for the map
+    coord = data.get("coord", {})
+    lat = coord.get("lat")
+    lon = coord.get("lon")
+    # Show weather info
+    lines = []
+    lines.append(f"City: {city_name}")
+    if temp is not None:
+        lines.append(f"Temperature: {temp:.1f} °C")
+    if humidity is not None:
+        lines.append(f"Humidity: {humidity}%")
+    if pressure is not None:
+        lines.append(f"Pressure: {pressure} hPa")
+    if wind_speed is not None:
+        lines.append(f"Wind speed: {wind_speed} m/s")
+    lines.append(f"Condition: {description.capitalize()}")
+    weather_label.config(text="\n".join(lines))
+
+    # Weather icon
+    if icon_code:
+        icon_url = f"http://openweathermap.org/img/wn/{icon_code}@2x.png"
+        icon_response = requests.get(icon_url)
+        image_data = icon_response.content
+        img = Image.open(BytesIO(image_data))
+        # Resize icon for display
+        img = img.resize((80, 80), Image.LANCZOS)
+        icon_img = ImageTk.PhotoImage(img)
+        icon_label.config(image=icon_img)
+        icon_label.image = icon_img
+    else:
+        icon_label.config(image='')
+
+    # Show map
+    if lat and lon:
+        map_widget.set_position(lat, lon)
+        map_widget.set_marker(lat, lon, text=city_name)
+    else:
+        map_widget.set_address(city_name)
+
+    # Umbrella/sunscreen advice
+    advice = ""
+    if "rain" in description.lower() or "shower" in description.lower() or "thunderstorm" in description.lower():
+        advice = "Grab an umbrella ☂️"
+    elif "clear" in description.lower() or (temp and temp > 28):
+        advice = "Apply sunscreen 🧴"
+    else:
+        advice = "Have a Nice Day!"
+    advice_label.config(text=advice)
+
+# ---------- Tkinter UI ----------
+root = tk.Tk()
+root.title("Weather App with Map & Advice")
+root.geometry("650x650")
+
+# Upper panel
+top_frame = tk.Frame(root, pady=8)
+top_frame.pack()
+city_label = tk.Label(top_frame, text="City:")
+city_label.pack(side=tk.LEFT, padx=5)
+city_entry = tk.Entry(top_frame, width=28)
+city_entry.pack(side=tk.LEFT, padx=5)
+city_entry.insert(0, "Bangalore")
+get_button = tk.Button(top_frame, text="Get Weather", command=get_weather)
+get_button.pack(side=tk.LEFT, padx=5)
+
+# Weather + Icon
+info_frame = tk.Frame(root)
+info_frame.pack(pady=8)
+weather_label = tk.Label(info_frame, text="Enter a city and click 'Get Weather'.", font=("Arial", 12), justify=tk.LEFT, width=40)
+weather_label.pack(side=tk.LEFT)
+icon_label = tk.Label(info_frame)
+icon_label.pack(side=tk.LEFT, padx=10)
+
+# Advice
+advice_label = tk.Label(root, text="", font=("Arial", 14, "bold"), fg="navy")
+advice_label.pack(pady=8)
+
+# Map
+map_frame = tk.Frame(root)
+map_frame.pack(pady=10, fill=tk.BOTH, expand=True)
+map_widget = TkinterMapView(map_frame, width=600, height=400)
+map_widget.pack(fill=tk.BOTH, expand=True)
+
+root.mainloop()
